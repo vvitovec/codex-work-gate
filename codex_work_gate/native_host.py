@@ -54,11 +54,11 @@ def handle_message(message: dict[str, Any] | None) -> dict[str, Any]:
 
 
 def serve() -> int:
-    while True:
-        message = read_message()
-        if message is None:
-            return 0
-        write_message(handle_message(message))
+    message = read_message()
+    if message is None:
+        return 0
+    write_message(handle_message(message))
+    return 0
 
 
 if __name__ == "__main__":

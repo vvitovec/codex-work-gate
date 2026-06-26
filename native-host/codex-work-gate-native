@@ -1,7 +1,9 @@
-#!/usr/bin/env python3
+#!/usr/bin/python3
 from __future__ import annotations
 
 import sys
+import traceback
+from datetime import datetime, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -9,6 +11,25 @@ sys.path.insert(0, str(ROOT))
 
 from codex_work_gate.native_host import serve
 
+LOG_PATH = Path.home() / ".codex-work-gate" / "native-host" / "native-host.log"
+
+
+def log(message: str) -> None:
+    try:
+        LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+        stamp = datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+        with LOG_PATH.open("a", encoding="utf-8") as handle:
+            handle.write(f"{stamp} repo-launcher {message}\n")
+    except OSError:
+        pass
+
 
 if __name__ == "__main__":
-    raise SystemExit(serve())
+    log("start")
+    try:
+        code = serve()
+    except Exception:
+        log("error " + traceback.format_exc().replace("\n", "\\n"))
+        raise
+    log(f"exit {code}")
+    raise SystemExit(code)

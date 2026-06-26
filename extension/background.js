@@ -1,4 +1,5 @@
 const NATIVE_HOST = "com.vvitovec.codex_work_gate";
+const STATUS_URL = "http://127.0.0.1:18732/status";
 const DEFAULT_BLOCKED_HOSTS = [
   "youtube.com",
   "youtu.be",
@@ -16,7 +17,10 @@ const FALLBACK_POLL_MS = 3000;
 let pollTimer = null;
 let lastRuleIds = [];
 let lastStatus = {
-  allowed: false,
+  allowed: true,
+  state: "starting",
+  reason: "waiting_for_first_status",
+  checkedAt: null,
   blockedHosts: DEFAULT_BLOCKED_HOSTS
 };
 
@@ -73,7 +77,24 @@ async function redirectOpenBlockedTabs(hosts) {
   );
 }
 
-function queryGate() {
+async function queryHttpGate() {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 1000);
+  try {
+    const response = await fetch(STATUS_URL, {
+      cache: "no-store",
+      signal: controller.signal
+    });
+    if (!response.ok) {
+      throw new Error(`http_${response.status}`);
+    }
+    return await response.json();
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function queryNativeGate() {
   return new Promise((resolve) => {
     chrome.runtime.sendNativeMessage(NATIVE_HOST, { action: "status" }, (response) => {
       if (chrome.runtime.lastError) {
@@ -99,6 +120,18 @@ function queryGate() {
   });
 }
 
+async function queryGate() {
+  try {
+    return await queryHttpGate();
+  } catch (error) {
+    const nativeStatus = await queryNativeGate();
+    if (nativeStatus.reason?.startsWith("native_host_error")) {
+      nativeStatus.reason = `http_error:${error.message};${nativeStatus.reason}`;
+    }
+    return nativeStatus;
+  }
+}
+
 async function setBlocked(blocked, hosts) {
   const removeRuleIds = lastRuleIds.length > 0
     ? lastRuleIds
@@ -111,14 +144,18 @@ async function setBlocked(blocked, hosts) {
   lastRuleIds = addRules.map((rule) => rule.id);
 }
 
-async function refreshGate() {
-  const status = await queryGate();
+async function applyStatus(status) {
   lastStatus = status;
   await chrome.storage.local.set({ gateStatus: status });
   await setBlocked(!status.allowed, status.blockedHosts);
   if (!status.allowed) {
     await redirectOpenBlockedTabs(status.blockedHosts);
   }
+}
+
+async function refreshGate() {
+  const status = await queryGate();
+  await applyStatus(status);
   const pollMs = Number(status.pollIntervalMs) > 0 ? Number(status.pollIntervalMs) : FALLBACK_POLL_MS;
   schedulePoll(pollMs);
 }
@@ -152,25 +189,6 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       checkedAt: new Date().toISOString()
     }));
   return true;
-});
-
-chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-  if (lastStatus.allowed || !changeInfo.url) {
-    return;
-  }
-  if (isBlockedUrl(changeInfo.url || tab.url || "", lastStatus.blockedHosts)) {
-    chrome.tabs.update(tabId, { url: chrome.runtime.getURL("blocked.html") }).catch(() => undefined);
-  }
-});
-
-chrome.tabs.onActivated.addListener(async ({ tabId }) => {
-  if (lastStatus.allowed) {
-    return;
-  }
-  const tab = await chrome.tabs.get(tabId).catch(() => undefined);
-  if (tab?.url && isBlockedUrl(tab.url, lastStatus.blockedHosts)) {
-    await chrome.tabs.update(tabId, { url: chrome.runtime.getURL("blocked.html") }).catch(() => undefined);
-  }
 });
 
 refreshGate();

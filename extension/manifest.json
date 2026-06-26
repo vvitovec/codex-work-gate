@@ -1,11 +1,14 @@
 {
   "manifest_version": 3,
   "name": "Codex Work Gate",
-  "version": "0.1.0",
+  "version": "0.1.4",
   "description": "Blocks distracting sites unless Codex is actively working.",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA1gEoRjABib9PRGLU87thoZPjy4O5RigSxEjzpsfRhpW/2LTWKC+O6AWUvfjBDx1elgW71sjuXcBB4EksMqGTBbsr07ZLpGXqwWKxwlpX0r/O5qIk/HobZnA5W4WGlydKGv1I0e3/poVcQckqqDf48Wb3VjH+KevQ8fobsCcDfKL86hTkv7+y/e1HQBRVNtBL9YLKehseSBr9t9ZHIX4tlM4uY9wSndplbXJf1TFVAKBdKsPXrv2MHbnW9R7mpLcH5vFyj6qPgjemzMVISSScIQge3RQ5HhnVra0kwvD92wYXup8VU7L/cXd3w2qUuY+1WpFcTKt44bSxGtOSPL77NwIDAQAB",
   "permissions": ["declarativeNetRequest", "nativeMessaging", "storage", "tabs"],
   "host_permissions": ["<all_urls>"],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'; connect-src 'self' http://127.0.0.1:* http://localhost:*"
+  },
   "background": {
     "service_worker": "background.js",
     "type": "module"

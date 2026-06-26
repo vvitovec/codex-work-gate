@@ -5,11 +5,12 @@ Local Chrome/Brave gate for macOS. It blocks distracting sites unless recent Cod
 ## How It Works
 
 1. Global Codex hooks write a heartbeat to `~/.codex-work-gate/status.json`.
-2. A Chrome/Brave Manifest V3 extension asks the native host for the current gate state.
-3. The native host reads the heartbeat and returns `allowed=true` only when:
+2. A tiny local status server runs at `http://127.0.0.1:18732/status`.
+3. A Chrome/Brave Manifest V3 extension reads that local status endpoint, with native messaging retained as a fallback.
+4. The gate returns `allowed=true` only when:
    - `state` is `active`
    - `lastActiveAt` is still inside the heartbeat TTL
-4. The extension enables redirect rules for blocked sites when the gate is closed.
+5. The extension enables redirect rules for blocked sites when the gate is closed.
 
 Approvals count as blocked. Idle/completed/missing/expired heartbeat states count as blocked.
 
@@ -48,6 +49,7 @@ After installing, open Codex and run `/hooks` if Codex says the hooks need revie
 ./codex-work-gate config set blockedHosts '["youtube.com","reddit.com"]'
 ./codex-work-gate event UserPromptSubmit
 ./codex-work-gate event Stop
+./codex-work-gate serve
 ```
 
 ## Verify
@@ -62,4 +64,4 @@ After installing, open Codex and run `/hooks` if Codex says the hooks need revie
 ./scripts/uninstall.sh
 ```
 
-This removes the Chrome/Brave native messaging manifests and Codex Work Gate entries from `~/.codex/hooks.json`. It leaves config and heartbeat files in place.
+This removes the Chrome/Brave native messaging manifests, the local LaunchAgent, installed launchers, and Codex Work Gate entries from `~/.codex/hooks.json`. It leaves config and heartbeat files in place.

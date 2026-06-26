@@ -15,6 +15,7 @@ class ExtensionStaticTests(unittest.TestCase):
         self.assertIn("nativeMessaging", manifest["permissions"])
         self.assertIn("declarativeNetRequest", manifest["permissions"])
         self.assertIn("tabs", manifest["permissions"])
+        self.assertIn("127.0.0.1", manifest["content_security_policy"]["extension_pages"])
         self.assertIn("key", manifest)
 
     def test_docs_mention_brave(self) -> None:
@@ -29,7 +30,13 @@ class ExtensionStaticTests(unittest.TestCase):
     def test_background_redirects_existing_tabs(self) -> None:
         source = (ROOT / "extension" / "background.js").read_text(encoding="utf-8")
         self.assertIn("redirectOpenBlockedTabs", source)
-        self.assertIn("chrome.tabs.onActivated", source)
+        self.assertNotIn("chrome.tabs.onUpdated.addListener", source)
+        self.assertNotIn("chrome.tabs.onActivated.addListener", source)
+
+    def test_background_uses_loopback_status_fallback(self) -> None:
+        source = (ROOT / "extension" / "background.js").read_text(encoding="utf-8")
+        self.assertIn("http://127.0.0.1:18732/status", source)
+        self.assertIn("queryNativeGate", source)
 
 
 if __name__ == "__main__":

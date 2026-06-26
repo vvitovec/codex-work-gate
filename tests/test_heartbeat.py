@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import tempfile
 import unittest
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from codex_work_gate.heartbeat import (
@@ -77,7 +77,7 @@ class HeartbeatTests(unittest.TestCase):
             self.assertEqual(json.loads(path.read_text(encoding="utf-8"))["state"], "active")
 
     def test_older_stop_does_not_override_newer_active(self) -> None:
-        active_time = datetime(2026, 6, 26, 9, 30, 10, tzinfo=UTC)
+        active_time = datetime(2026, 6, 26, 9, 30, 10, tzinfo=timezone.utc)
         previous = status_for_event("PreToolUse", timestamp=iso(active_time))
         status = status_for_event("Stop", previous=previous, timestamp=iso(active_time - timedelta(seconds=5)))
         self.assertEqual(status["state"], "active")

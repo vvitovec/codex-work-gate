@@ -1,11 +1,11 @@
-#!/usr/bin/env python3
+#!/usr/bin/python3
 from __future__ import annotations
 
 import json
 import os
 import sys
 import tempfile
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 APP_DIR = Path(os.environ.get("CODEX_WORK_GATE_HOME", "~/.codex-work-gate")).expanduser()
@@ -17,7 +17,7 @@ STOP_EVENTS = {"Stop", "SubagentStop"}
 
 
 def now_iso() -> str:
-    return datetime.now(UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+    return datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
 
 
 def parse_iso(value: str | None) -> datetime | None:

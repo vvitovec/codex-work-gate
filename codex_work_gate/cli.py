@@ -12,6 +12,7 @@ from typing import Any
 
 from .config import DEFAULT_CONFIG, load_config, write_default_config
 from .heartbeat import decide_gate, now_iso, read_status, write_event
+from .http_server import DEFAULT_HOST, DEFAULT_PORT, serve_http
 from .paths import (
     APP_DIR,
     BRAVE_NATIVE_HOST_DIR,
@@ -19,8 +20,12 @@ from .paths import (
     CODEX_HOOKS_PATH,
     CONFIG_PATH,
     HOOK_WRITER_PATH,
+    LAUNCH_AGENT_PATH,
+    LIB_DIR,
+    NATIVE_HOST_PATH,
     NATIVE_HOST_MANIFEST,
     NATIVE_HOST_NAME,
+    SERVER_PATH,
     STATUS_PATH,
     repo_root,
 )
@@ -45,7 +50,7 @@ def event_command(args: argparse.Namespace) -> int:
 
 
 def _hook_command(event: str) -> str:
-    return f'/usr/bin/env python3 "{HOOK_WRITER_PATH}" {event}'
+    return f'/usr/bin/python3 "{HOOK_WRITER_PATH}" {event}'
 
 
 def _hook_entry(event: str) -> list[dict[str, Any]]:
@@ -87,6 +92,121 @@ def write_hook_script() -> None:
     HOOK_WRITER_PATH.chmod(current | stat.S_IXUSR)
 
 
+def write_runtime_package() -> None:
+    package_source = repo_root() / "codex_work_gate"
+    package_target = LIB_DIR / "codex_work_gate"
+    if package_target.exists():
+        shutil.rmtree(package_target)
+    LIB_DIR.mkdir(parents=True, exist_ok=True)
+    shutil.copytree(
+        package_source,
+        package_target,
+        ignore=shutil.ignore_patterns("__pycache__", "*.pyc"),
+    )
+
+
+def write_native_host_launcher() -> None:
+    NATIVE_HOST_PATH.parent.mkdir(parents=True, exist_ok=True)
+    root = str(LIB_DIR.resolve())
+    log_path = str((NATIVE_HOST_PATH.parent / "native-host.log").resolve())
+    launcher = f"""#!/usr/bin/python3
+from __future__ import annotations
+
+import datetime
+import traceback
+import sys
+
+sys.path.insert(0, {root!r})
+
+from codex_work_gate.native_host import serve
+
+LOG_PATH = {log_path!r}
+
+def log(message: str) -> None:
+    try:
+        with open(LOG_PATH, "a", encoding="utf-8") as handle:
+            stamp = datetime.datetime.utcnow().isoformat(timespec="seconds") + "Z"
+            handle.write(f"{{stamp}} {{message}}\\n")
+    except OSError:
+        pass
+
+if __name__ == "__main__":
+    log("start")
+    try:
+        code = serve()
+    except Exception:
+        log("error " + traceback.format_exc().replace("\\n", "\\\\n"))
+        raise
+    log(f"exit {{code}}")
+    raise SystemExit(code)
+"""
+    NATIVE_HOST_PATH.write_text(launcher, encoding="utf-8")
+    current = NATIVE_HOST_PATH.stat().st_mode
+    NATIVE_HOST_PATH.chmod(current | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+
+
+def write_server_launcher() -> None:
+    SERVER_PATH.parent.mkdir(parents=True, exist_ok=True)
+    root = str(LIB_DIR.resolve())
+    launcher = f"""#!/usr/bin/python3
+from __future__ import annotations
+
+import sys
+
+sys.path.insert(0, {root!r})
+
+from codex_work_gate.http_server import serve_http
+
+if __name__ == "__main__":
+    serve_http()
+"""
+    SERVER_PATH.write_text(launcher, encoding="utf-8")
+    current = SERVER_PATH.stat().st_mode
+    SERVER_PATH.chmod(current | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+
+
+def write_launch_agent() -> None:
+    LAUNCH_AGENT_PATH.parent.mkdir(parents=True, exist_ok=True)
+    plist = f"""<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.vvitovec.codex-work-gate</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>{SERVER_PATH}</string>
+  </array>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>StandardOutPath</key>
+  <string>{APP_DIR / "server.log"}</string>
+  <key>StandardErrorPath</key>
+  <string>{APP_DIR / "server.err.log"}</string>
+</dict>
+</plist>
+"""
+    LAUNCH_AGENT_PATH.write_text(plist, encoding="utf-8")
+
+
+def restart_launch_agent() -> None:
+    uid = os.getuid()
+    subprocess.run(
+        ["launchctl", "bootout", f"gui/{uid}", str(LAUNCH_AGENT_PATH)],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        check=False,
+    )
+    subprocess.run(
+        ["launchctl", "bootstrap", f"gui/{uid}", str(LAUNCH_AGENT_PATH)],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        check=False,
+    )
+
+
 def install_hooks() -> None:
     existing: dict[str, Any] | None = None
     if CODEX_HOOKS_PATH.exists():
@@ -102,7 +222,7 @@ def native_host_manifest(extension_id: str = EXTENSION_ID) -> dict[str, Any]:
     return {
         "name": NATIVE_HOST_NAME,
         "description": "Codex Work Gate native host",
-        "path": str((repo_root() / "native-host" / "codex-work-gate-native").resolve()),
+        "path": str(NATIVE_HOST_PATH.resolve()),
         "type": "stdio",
         "allowed_origins": [f"chrome-extension://{extension_id}/"],
     }
@@ -143,7 +263,12 @@ def install_native_host(extension_id: str = EXTENSION_ID) -> None:
 def install_command(args: argparse.Namespace) -> int:
     write_default_config(CONFIG_PATH)
     APP_DIR.mkdir(parents=True, exist_ok=True)
+    write_runtime_package()
     write_hook_script()
+    write_native_host_launcher()
+    write_server_launcher()
+    write_launch_agent()
+    restart_launch_agent()
     install_hooks()
     native_hosts = install_native_hosts(args.extension_id, args.browser)
     browser_pages = {
@@ -159,6 +284,9 @@ def install_command(args: argparse.Namespace) -> int:
             "status": str(STATUS_PATH),
             "hooks": str(CODEX_HOOKS_PATH),
             "hookWriter": str(HOOK_WRITER_PATH),
+            "nativeHost": str(NATIVE_HOST_PATH),
+            "server": f"http://{DEFAULT_HOST}:{DEFAULT_PORT}/status",
+            "serverLaunchAgent": str(LAUNCH_AGENT_PATH),
             "nativeHostManifests": {browser: str(path) for browser, path in native_hosts.items()},
             "extensionId": args.extension_id,
             "extensionPath": str((repo_root() / "extension").resolve()),
@@ -170,6 +298,15 @@ def install_command(args: argparse.Namespace) -> int:
 
 def uninstall_command(_: argparse.Namespace) -> int:
     removed: list[str] = []
+    subprocess.run(
+        ["launchctl", "bootout", f"gui/{os.getuid()}", str(LAUNCH_AGENT_PATH)],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        check=False,
+    )
+    if LAUNCH_AGENT_PATH.exists():
+        LAUNCH_AGENT_PATH.unlink()
+        removed.append(str(LAUNCH_AGENT_PATH))
     if NATIVE_HOST_MANIFEST.exists():
         NATIVE_HOST_MANIFEST.unlink()
         removed.append(str(NATIVE_HOST_MANIFEST))
@@ -191,6 +328,10 @@ def uninstall_command(_: argparse.Namespace) -> int:
         config["hooks"] = hooks
         CODEX_HOOKS_PATH.write_text(json.dumps(config, indent=2, sort_keys=True) + "\n", encoding="utf-8")
         removed.append("Codex Work Gate hook entries")
+    for path in [NATIVE_HOST_PATH, SERVER_PATH]:
+        if path.exists():
+            path.unlink()
+            removed.append(str(path))
     print_json({"removed": removed})
     return 0
 
@@ -201,9 +342,11 @@ def doctor_command(_: argparse.Namespace) -> int:
     def add(name: str, ok: bool, detail: str) -> None:
         checks.append({"name": name, "ok": ok, "detail": detail})
 
-    add("python", sys.version_info >= (3, 10), sys.version.split()[0])
+    add("python", sys.version_info >= (3, 9), sys.version.split()[0])
     add("config", CONFIG_PATH.exists(), str(CONFIG_PATH))
     add("hook_writer", HOOK_WRITER_PATH.exists() and os.access(HOOK_WRITER_PATH, os.X_OK), str(HOOK_WRITER_PATH))
+    add("native_host", NATIVE_HOST_PATH.exists() and os.access(NATIVE_HOST_PATH, os.X_OK), str(NATIVE_HOST_PATH))
+    add("server_launcher", SERVER_PATH.exists() and os.access(SERVER_PATH, os.X_OK), str(SERVER_PATH))
     add("codex_hooks", CODEX_HOOKS_PATH.exists(), str(CODEX_HOOKS_PATH))
     brave_manifest = BRAVE_NATIVE_HOST_DIR / f"{NATIVE_HOST_NAME}.json"
     browser_manifests = {
@@ -218,6 +361,13 @@ def doctor_command(_: argparse.Namespace) -> int:
     status, error = read_status(STATUS_PATH)
     decision = decide_gate(status, error, now_iso()).as_json()
     add("heartbeat_readable", error is None or error == "missing", error or "ok")
+    try:
+        import urllib.request
+
+        with urllib.request.urlopen(f"http://{DEFAULT_HOST}:{DEFAULT_PORT}/status", timeout=1) as response:
+            add("status_server", response.status == 200, f"http://{DEFAULT_HOST}:{DEFAULT_PORT}/status")
+    except OSError as exc:
+        add("status_server", False, f"{exc.__class__.__name__}: {exc}")
     add("chrome_extension_path", (repo_root() / "extension" / "manifest.json").exists(), str(repo_root() / "extension"))
     hook_trust = "Run /hooks in Codex and trust Codex Work Gate hooks if they are pending."
     print_json({"ok": all(check["ok"] for check in checks), "checks": checks, "gate": decision, "hookTrust": hook_trust})
@@ -269,6 +419,11 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("uninstall").set_defaults(func=uninstall_command)
     sub.add_parser("doctor").set_defaults(func=doctor_command)
     sub.add_parser("verify").set_defaults(func=verify_command)
+
+    serve = sub.add_parser("serve")
+    serve.add_argument("--host", default=DEFAULT_HOST)
+    serve.add_argument("--port", type=int, default=DEFAULT_PORT)
+    serve.set_defaults(func=lambda args: serve_http(args.host, args.port) or 0)
 
     config = sub.add_parser("config")
     config_sub = config.add_subparsers(dest="config_action", required=True)
