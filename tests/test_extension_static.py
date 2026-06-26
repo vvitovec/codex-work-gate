@@ -16,6 +16,10 @@ class ExtensionStaticTests(unittest.TestCase):
         self.assertIn("declarativeNetRequest", manifest["permissions"])
         self.assertIn("key", manifest)
 
+    def test_docs_mention_brave(self) -> None:
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        self.assertIn("brave://extensions", readme)
+
     def test_background_contains_default_blocked_hosts(self) -> None:
         source = (ROOT / "extension" / "background.js").read_text(encoding="utf-8")
         for host in ["youtube.com", "netflix.com", "reddit.com", "twitch.tv"]:

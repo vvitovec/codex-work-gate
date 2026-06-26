@@ -15,6 +15,9 @@ CODEX_HOOKS_PATH = Path(os.environ.get("CODEX_HOOKS_PATH", "~/.codex/hooks.json"
 CHROME_NATIVE_HOST_DIR = Path(
     "~/Library/Application Support/Google/Chrome/NativeMessagingHosts"
 ).expanduser()
+BRAVE_NATIVE_HOST_DIR = Path(
+    "~/Library/Application Support/BraveSoftware/Brave-Browser/NativeMessagingHosts"
+).expanduser()
 NATIVE_HOST_NAME = "com.vvitovec.codex_work_gate"
 NATIVE_HOST_MANIFEST = CHROME_NATIVE_HOST_DIR / f"{NATIVE_HOST_NAME}.json"
 

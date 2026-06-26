@@ -14,6 +14,7 @@ from .config import DEFAULT_CONFIG, load_config, write_default_config
 from .heartbeat import decide_gate, now_iso, read_status, write_event
 from .paths import (
     APP_DIR,
+    BRAVE_NATIVE_HOST_DIR,
     CHROME_NATIVE_HOST_DIR,
     CODEX_HOOKS_PATH,
     CONFIG_PATH,
@@ -107,6 +108,30 @@ def native_host_manifest(extension_id: str = EXTENSION_ID) -> dict[str, Any]:
     }
 
 
+def browser_native_host_dirs(browsers: list[str]) -> dict[str, Path]:
+    all_dirs = {
+        "chrome": CHROME_NATIVE_HOST_DIR,
+        "brave": BRAVE_NATIVE_HOST_DIR,
+    }
+    if "all" in browsers:
+        return all_dirs
+    return {name: all_dirs[name] for name in browsers if name in all_dirs}
+
+
+def install_native_hosts(extension_id: str = EXTENSION_ID, browsers: list[str] | None = None) -> dict[str, Path]:
+    targets = browser_native_host_dirs(browsers or ["chrome"])
+    written: dict[str, Path] = {}
+    for browser, directory in targets.items():
+        directory.mkdir(parents=True, exist_ok=True)
+        manifest_path = directory / f"{NATIVE_HOST_NAME}.json"
+        manifest_path.write_text(
+            json.dumps(native_host_manifest(extension_id), indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        written[browser] = manifest_path
+    return written
+
+
 def install_native_host(extension_id: str = EXTENSION_ID) -> None:
     CHROME_NATIVE_HOST_DIR.mkdir(parents=True, exist_ok=True)
     NATIVE_HOST_MANIFEST.write_text(
@@ -120,18 +145,24 @@ def install_command(args: argparse.Namespace) -> int:
     APP_DIR.mkdir(parents=True, exist_ok=True)
     write_hook_script()
     install_hooks()
-    install_native_host(args.extension_id)
+    native_hosts = install_native_hosts(args.extension_id, args.browser)
+    browser_pages = {
+        "chrome": "chrome://extensions",
+        "brave": "brave://extensions",
+    }
+    extension_pages = [browser_pages[name] for name in native_hosts if name in browser_pages]
     print_json(
         {
             "installed": True,
+            "browsers": sorted(native_hosts.keys()),
             "config": str(CONFIG_PATH),
             "status": str(STATUS_PATH),
             "hooks": str(CODEX_HOOKS_PATH),
             "hookWriter": str(HOOK_WRITER_PATH),
-            "nativeHostManifest": str(NATIVE_HOST_MANIFEST),
+            "nativeHostManifests": {browser: str(path) for browser, path in native_hosts.items()},
             "extensionId": args.extension_id,
             "extensionPath": str((repo_root() / "extension").resolve()),
-            "nextStep": "Open chrome://extensions, enable Developer mode, and Load unpacked extension/.",
+            "nextStep": f"Open {', '.join(extension_pages)}, enable Developer mode, and Load unpacked extension/.",
         }
     )
     return 0
@@ -142,6 +173,10 @@ def uninstall_command(_: argparse.Namespace) -> int:
     if NATIVE_HOST_MANIFEST.exists():
         NATIVE_HOST_MANIFEST.unlink()
         removed.append(str(NATIVE_HOST_MANIFEST))
+    brave_manifest = BRAVE_NATIVE_HOST_DIR / f"{NATIVE_HOST_NAME}.json"
+    if brave_manifest.exists():
+        brave_manifest.unlink()
+        removed.append(str(brave_manifest))
     if CODEX_HOOKS_PATH.exists():
         config = json.loads(CODEX_HOOKS_PATH.read_text(encoding="utf-8"))
         hooks = dict(config.get("hooks") or {})
@@ -170,7 +205,16 @@ def doctor_command(_: argparse.Namespace) -> int:
     add("config", CONFIG_PATH.exists(), str(CONFIG_PATH))
     add("hook_writer", HOOK_WRITER_PATH.exists() and os.access(HOOK_WRITER_PATH, os.X_OK), str(HOOK_WRITER_PATH))
     add("codex_hooks", CODEX_HOOKS_PATH.exists(), str(CODEX_HOOKS_PATH))
-    add("native_host_manifest", NATIVE_HOST_MANIFEST.exists(), str(NATIVE_HOST_MANIFEST))
+    brave_manifest = BRAVE_NATIVE_HOST_DIR / f"{NATIVE_HOST_NAME}.json"
+    browser_manifests = {
+        "chrome": str(NATIVE_HOST_MANIFEST) if NATIVE_HOST_MANIFEST.exists() else None,
+        "brave": str(brave_manifest) if brave_manifest.exists() else None,
+    }
+    add(
+        "browser_native_host_manifest",
+        any(browser_manifests.values()),
+        json.dumps(browser_manifests, sort_keys=True),
+    )
     status, error = read_status(STATUS_PATH)
     decision = decide_gate(status, error, now_iso()).as_json()
     add("heartbeat_readable", error is None or error == "missing", error or "ok")
@@ -213,6 +257,13 @@ def build_parser() -> argparse.ArgumentParser:
 
     install = sub.add_parser("install")
     install.add_argument("--extension-id", default=EXTENSION_ID)
+    install.add_argument(
+        "--browser",
+        action="append",
+        choices=["chrome", "brave", "all"],
+        default=None,
+        help="Browser native host to install. Repeatable. Defaults to chrome.",
+    )
     install.set_defaults(func=install_command)
 
     sub.add_parser("uninstall").set_defaults(func=uninstall_command)

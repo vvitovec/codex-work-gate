@@ -12,7 +12,7 @@ Common issues:
 - `hook_writer` is false: run `./scripts/install.sh`.
 - Sites stay blocked after prompting Codex: open `/hooks` in Codex and trust the hooks.
 - Sites stay unblocked after Codex quits: wait for the TTL, then run `./codex-work-gate status`.
-- Chrome says native host is missing: restart Chrome after installation and confirm the extension ID is `idfgjomaacpinnidblmackdpfnacipja`.
+- Chrome or Brave says native host is missing: restart the browser after installation and confirm the extension ID is `idfgjomaacpinnidblmackdpfnacipja`.
 
 Manual heartbeat checks:
 

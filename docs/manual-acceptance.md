@@ -1,7 +1,7 @@
 # Manual Acceptance
 
 1. Run `./scripts/install.sh`.
-2. Load `extension/` from `chrome://extensions`.
+2. Load `extension/` from `chrome://extensions` or `brave://extensions`.
 3. Trust the hooks from `/hooks` in Codex if prompted.
 4. Start a Codex prompt.
 5. Confirm `./codex-work-gate status` returns `allowed: true`.
