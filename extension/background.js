@@ -15,6 +15,10 @@ const FALLBACK_POLL_MS = 3000;
 
 let pollTimer = null;
 let lastRuleIds = [];
+let lastStatus = {
+  allowed: false,
+  blockedHosts: DEFAULT_BLOCKED_HOSTS
+};
 
 function normalizeHosts(hosts) {
   if (!Array.isArray(hosts)) {
@@ -40,6 +44,33 @@ function buildRule(host, index) {
       resourceTypes: ["main_frame"]
     }
   };
+}
+
+function hostMatches(hostname, blockedHost) {
+  return hostname === blockedHost || hostname.endsWith(`.${blockedHost}`);
+}
+
+function isBlockedUrl(url, hosts) {
+  try {
+    const parsed = new URL(url);
+    if (!["http:", "https:"].includes(parsed.protocol)) {
+      return false;
+    }
+    const hostname = parsed.hostname.toLowerCase();
+    return normalizeHosts(hosts).some((host) => hostMatches(hostname, host));
+  } catch (_error) {
+    return false;
+  }
+}
+
+async function redirectOpenBlockedTabs(hosts) {
+  const tabs = await chrome.tabs.query({});
+  const blockedUrl = chrome.runtime.getURL("blocked.html");
+  await Promise.all(
+    tabs
+      .filter((tab) => tab.id && tab.url && isBlockedUrl(tab.url, hosts))
+      .map((tab) => chrome.tabs.update(tab.id, { url: blockedUrl }).catch(() => undefined))
+  );
 }
 
 function queryGate() {
@@ -82,8 +113,12 @@ async function setBlocked(blocked, hosts) {
 
 async function refreshGate() {
   const status = await queryGate();
+  lastStatus = status;
   await chrome.storage.local.set({ gateStatus: status });
   await setBlocked(!status.allowed, status.blockedHosts);
+  if (!status.allowed) {
+    await redirectOpenBlockedTabs(status.blockedHosts);
+  }
   const pollMs = Number(status.pollIntervalMs) > 0 ? Number(status.pollIntervalMs) : FALLBACK_POLL_MS;
   schedulePoll(pollMs);
 }
@@ -117,6 +152,25 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       checkedAt: new Date().toISOString()
     }));
   return true;
+});
+
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+  if (lastStatus.allowed || !changeInfo.url) {
+    return;
+  }
+  if (isBlockedUrl(changeInfo.url || tab.url || "", lastStatus.blockedHosts)) {
+    chrome.tabs.update(tabId, { url: chrome.runtime.getURL("blocked.html") }).catch(() => undefined);
+  }
+});
+
+chrome.tabs.onActivated.addListener(async ({ tabId }) => {
+  if (lastStatus.allowed) {
+    return;
+  }
+  const tab = await chrome.tabs.get(tabId).catch(() => undefined);
+  if (tab?.url && isBlockedUrl(tab.url, lastStatus.blockedHosts)) {
+    await chrome.tabs.update(tabId, { url: chrome.runtime.getURL("blocked.html") }).catch(() => undefined);
+  }
 });
 
 refreshGate();

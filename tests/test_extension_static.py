@@ -14,6 +14,7 @@ class ExtensionStaticTests(unittest.TestCase):
         self.assertEqual(manifest["manifest_version"], 3)
         self.assertIn("nativeMessaging", manifest["permissions"])
         self.assertIn("declarativeNetRequest", manifest["permissions"])
+        self.assertIn("tabs", manifest["permissions"])
         self.assertIn("key", manifest)
 
     def test_docs_mention_brave(self) -> None:
@@ -24,6 +25,11 @@ class ExtensionStaticTests(unittest.TestCase):
         source = (ROOT / "extension" / "background.js").read_text(encoding="utf-8")
         for host in ["youtube.com", "netflix.com", "reddit.com", "twitch.tv"]:
             self.assertIn(host, source)
+
+    def test_background_redirects_existing_tabs(self) -> None:
+        source = (ROOT / "extension" / "background.js").read_text(encoding="utf-8")
+        self.assertIn("redirectOpenBlockedTabs", source)
+        self.assertIn("chrome.tabs.onActivated", source)
 
 
 if __name__ == "__main__":
