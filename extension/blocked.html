@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Codex Work Gate</title>
+    <link rel="stylesheet" href="blocked.css">
+  </head>
+  <body>
+    <main>
+      <section class="panel">
+        <p class="eyebrow">Codex Work Gate</p>
+        <h1>Start Codex first.</h1>
+        <p class="copy">This site opens again while a Codex task is actively running.</p>
+        <dl>
+          <div>
+            <dt>State</dt>
+            <dd id="state">checking</dd>
+          </div>
+          <div>
+            <dt>Reason</dt>
+            <dd id="reason">waiting for native host</dd>
+          </div>
+          <div>
+            <dt>Checked</dt>
+            <dd id="checked">-</dd>
+          </div>
+        </dl>
+        <button id="refresh" type="button">Check again</button>
+      </section>
+    </main>
+    <script src="blocked.js"></script>
+  </body>
+</html>
